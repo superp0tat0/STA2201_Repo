@@ -43,11 +43,24 @@ main_data <- clean_names(main_data)
 ```
 
 3. Summarize the variables in the dataset. Are there missing values, and if so, should we be worried about them? Is every variable in the format it should be? If not, create new variable(s) that are in the right format.
+
+Answer:
+======
+
+* Yes, there are lots of missing values such as contributors_address, goods or service, relationship, authorized representative and so on.
+* I think we should not worry about the NA variables too much, there are various reasons. For example, some of the information are too personal that the contributors might not willing to fill. Such as the contributors address. Then for the relations and authorized representative. NA already represent some useful information like None.
+* I have convert the contribution amount to numeric value.
 ```{r}
 main_data$contribution_amount = as.numeric(main_data$contribution_amount)
 ```
 
 4. Visually explore the distribution of values of the contributions. What contributions are notable outliers? Do they share a similar characteristic(s)? It may be useful to plot the distribution of contributions without these outliers to get a better sense of the majority of the data.
+
+Answer:
+======
+
+* Amount larger than 3000 are most likely to be notable outliers.
+* Most of them are contributed by the candidates themselves.
 ```{r}
 filtered_data <- main_data %>% filter(main_data$contribution_amount < 3000)
 ggplot(filtered_data, aes(x=filtered_data$contribution_amount)) + geom_density()
@@ -59,27 +72,30 @@ main_data %>% filter(main_data$contribution_amount > 3000)
     + mean contribution
     + number of contributions
 ```{r}
-main_data %>% group_by(candidate) %>% summarize(Total=sum(contribution_amount, na.rm = T)) %>% arrange(desc(Total))
+main_data %>% group_by(candidate) %>% summarize(Total=sum(contribution_amount, na.rm = T)) %>% arrange(desc(Total)) %>% slice(1:5)
 
-main_data %>% group_by(candidate) %>% summarize(Mean=mean(contribution_amount, na.rm = T)) %>% arrange(desc(Mean))
+main_data %>% group_by(candidate) %>% summarize(Mean=mean(contribution_amount, na.rm = T)) %>% arrange(desc(Mean)) %>% slice(1:5)
 
-main_data %>% group_by(candidate) %>% summarize(Count=n()) %>% arrange(desc(Count))
+main_data %>% group_by(candidate) %>% summarize(Count=n()) %>% arrange(desc(Count)) %>% slice(1:5)
 ```
 
 6. Repeat 5 but without contributions from the candidates themselves.
 ```{r}
 main_data %>% filter(contributors_name != candidate) %>% group_by(candidate) %>%
-  summarize(Total=sum(contribution_amount, na.rm = T)) %>% arrange(desc(Total))
+  summarize(Total=sum(contribution_amount, na.rm = T)) %>% arrange(desc(Total)) %>% slice(1:5)
 
 main_data %>% filter(contributors_name != candidate) %>% group_by(candidate) %>%
-  summarize(Mean=mean(contribution_amount, na.rm = T)) %>% arrange(desc(Mean))
+  summarize(Mean=mean(contribution_amount, na.rm = T)) %>% arrange(desc(Mean)) %>% slice(1:5)
 
 main_data %>% filter(contributors_name != candidate) %>% group_by(candidate) %>%
   summarize(Count=n()) %>% arrange(desc(Count)) %>% slice(1:5)
 ```
 
 7. How many contributors gave money to more than one candidate?
-184
+
+Answer
+======
+* 184
 ```{r}
 main_data %>% 
   group_by(contributors_name) %>%
