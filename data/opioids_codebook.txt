@@ -1,0 +1,11 @@
+State-level opioids dataset, 2008-2017
+________________________________________
+year: the year of observation
+state: US state
+abbrev: state code
+total_pop: population in that state/year
+expected_deaths: the expected number of deaths given national-level opioid mortality rates and the state- and year-specific population by age
+prop_white: proportion of population who are white
+prescription_rate: Opioid prescribing rate per 100 people
+unemp: Unemployment rate
+

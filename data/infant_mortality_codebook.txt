@@ -1,0 +1,38 @@
+Infant mortality datasets, US 2012 birth cohort
+________________________________________
+
+infant.RDS: micro-level data on infant deaths to the 2012 birth cohort
+
+sex: sex of baby 
+aged: age of death in days
+race: race of mother, non-Hispanic white or non-Hispanic black
+gest: gestational age in weeks
+ucod: ICD-10 code of underlying cause of death
+cod: categories of cause of death. 
+    + cong_mal: congenital malformations
+    + heart: conditions of the heart
+    + infection: deaths due to infections
+    + maltreatment: death due to maltreatment
+    + resp: respiratory issues
+    + peri_comp: complications in perinatal period
+    + peri_inf: infection in perinatal period
+    + peri_resp: respiratory conditions in perinatal period
+    + peri_oth: other causes in perinatal period
+    + sids: sudden infant death syndrome
+    + other: other causes of death not otherwise classified
+    + unknown
+mom_age: mother's age in years
+mom_age_group: mother's five-year age group 
+prematurity: category of prematurity of birth based on gestational age
+    + extremely preterm: less than 28 weeks
+    + very preterm: 28-31 weeks
+    + later preterm: 32-36 weeks
+    + full-term: 37+ weeks
+
+------------------------------------
+
+births.RDS: number of live births by group in US 2012 birth cohort
+
+race: as above
+prematurity: as above
+births: number of live births
