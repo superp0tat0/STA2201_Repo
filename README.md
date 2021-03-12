@@ -3,3 +3,5 @@
 Materials for STA2201H, Winter semester 2021. To be updated throughout the semester. 
 
 Week 1 - Introduction
+
+Finished the pull request
