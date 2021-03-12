@@ -124,7 +124,7 @@ ggplot(data = alpha_new, aes(x = log, y = alpha)) +
 5. For the predicted y plot, you will need your posterior predictive samples for $y$'s and then just use `geom_density()`
 ```{r}
 more_data <- extract(fit)
-compare = data.frame(cbind(y[county == 2]))
+compare = data.frame(new = more_data$mu_alpha)
 compare2 = data.frame(new = more_data$alpha[,2])
 colnames(compare) <- c("log_radon")
 

@@ -28,6 +28,7 @@ parameters {
   real<lower=0> sigma_alpha;
   real<lower=0> sigma;
   vector[J] alpha;
+  real mu_alpha;
 }
 
 // The model to be estimated. We model the output
@@ -48,6 +49,7 @@ model {
   alpha ~ normal(alpha_hat, sigma_alpha);
   beta ~ normal(0,1);
   sigma ~ normal(0,1);
+  mu_alpha ~ normal(0,1);
   sigma_alpha ~ normal(0,1);
   
   y ~ normal(y_hat, sigma);
