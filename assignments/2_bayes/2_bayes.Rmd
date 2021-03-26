@@ -1,0 +1,395 @@
+---
+title: "STA2201H Winter 2021 Assignment 2"
+output: 
+  pdf_document:
+    number_sections: true
+fontsize: 11pt
+---
+
+**Due:** 11:59pm ET, March 29 2021
+
+**What to hand in:** .Rmd file and the compiled pdf
+
+**How to hand in:** Submit files via Quercus
+
+Note that at the end of this document there are details about the research proposal. 
+
+\newpage
+# Wells
+
+This question uses data looking at the decision of households in Bangladesh to switch drinking water wells in response to their well being marked as unsafe or not. A full description from the Gelman Hill text book (page 87): 
+
+*"Many of the wells used for drinking water in Bangladesh and other South Asian
+countries are contaminated with natural arsenic, affecting an estimated 100 million
+people. Arsenic is a cumulative poison, and exposure increases the risk of cancer
+and other diseases, with risks estimated to be proportional to exposure.
+Any locality can include wells with a range of arsenic levels. The bad news is that even if your neighbor’s well is safe, it does not
+mean that yours is safe. However, the corresponding good news is that, if your well
+has a high arsenic level, you can probably find a safe well nearby to get your water
+from—if you are willing to walk the distance and your neighbor is willing to share. [In an area of Bangladesh, a research team] measured all the wells and labeled them with their arsenic level as well
+as a characterization as “safe” (below 0.5 in units of hundreds of micrograms per
+liter, the Bangladesh standard for arsenic in drinking water) or “unsafe” (above 0.5).
+People with unsafe wells were encouraged to switch to nearby private or community
+wells or to new wells of their own construction.
+A few years later, the researchers returned to find out who had switched wells."*
+
+The outcome of interest is whether or not household $i$ switched wells:
+
+$$
+y_{i}=\left\{\begin{array}{ll}1 & \text { if household } i \text { switched to a new well } \\ 0 & \text { if household } i \text { continued using its own well. }\end{array}\right.
+$$
+
+The data we are using for this question are here: http://www.stat.columbia.edu/~gelman/arm/examples/arsenic/wells.dat and you can load them in directly using
+
+```{r, eval = FALSE}
+d <- read.table(url("http://www.stat.columbia.edu/~gelman/arm/examples/arsenic/wells.dat"))
+```
+
+The variables of interest for this questions are 
+
+- `switch`, which is $y_i$ above
+- `arsenic`, the level of arsenic of the respondent's well
+- `dist`, the distance (in metres) of the closest known safe well
+
+a) Do an exploratory data analysis illustrating the relationship between well-switching, distance and arsenic. Think about different ways of effectively illustrating the relationships given the binary outcome. As usual, a good EDA includes well-thought-out descriptions and analysis of any graphs and tables provided, well-labelled axes, titles etc. 
+
+* Answer:
+  In this dataset, we have 1737 people choose to switch their wells and 1283 people choose not to switch their wells. So the dataset is not very well balanced. The quantile for arsenic and distance can be displayed below. Both of their trends are right skewed. We will discuss their distribution by group next.
+  
+|   |  min |25%   | median  | 75%  |  max |
+|---|---|---|---|---|---|
+| arsenic  | 0.51  |0.82   |1.30   |2.20   |9.65   |
+| distance  |  0.387 |21.117   |36.761   |64.04   |339.531   |
+
+  We then want to explore the realtionship between switch well and arisenic. From the graph below we could see the suggestion plays a key role. The peak of switch and not switch are both near 0.5. However, there are still more people prefer not to switch even a little above 0.5. This trend change when arsenic is close to 1.25. Where more people prefer to switch the well.
+  
+  However for the distance it is not the case. We could find the peak for switch and not to switch are both at 25, although people prefer to switch the well at 25. This trend changes when the distance is greater than 75. More people prefer not to switch at this point.
+  
+  
+```{r, echo = F}
+library(ggplot2)
+library(caret)
+library(rstan)
+library(tidyverse)
+d$switch <- as.factor(d$switch)
+ggplot(data = d, aes(x=arsenic, fill=switch)) + 
+  geom_density(alpha=.3)
+ggplot(data = d, aes(x=dist, fill=switch)) + 
+  geom_density(alpha=.3)
+
+```
+
+\newpage
+Assume $y_i \sim Bern(p_i)$, where $p_i$ refers to the probability of switching. Consider two candidate models.
+
+- Model 1: $$\operatorname{logit}\left(p_{i}\right)=\beta_{0}+\beta_{1} \cdot\left(d_{i}-\bar{d}\right)+\beta_{2} \cdot\left(a_{i}-\bar{a}\right)+\beta_{3} \cdot\left(d_{i}-\bar{d}\right)\left(a_{i}-\bar{a}\right)$$
+
+- Model 2: 
+
+$$\begin{aligned} \operatorname{logit}\left(p_{i}\right)=& \beta_{0}+\beta_{1} \cdot\left(d_{i}-\bar{d}\right)+\beta_{2} \cdot\left(\log \left(a_{i}\right)-\overline{\log (a)}\right) \\ 
+&+\beta_{3} \cdot\left(d_{i}-\bar{d}\right)\left(\log \left(a_{i}\right)-\overline{\log (a)}\right)
+\end{aligned}$$
+
+where $d_i$ is distance and $a_i$ is arsenic level. 
+
+
+
+b) Fit both of these models using Stan. Put $N(0,1)$ priors on all the $\beta$s. You should generate pointwise log likelihood estimates (to be used in later questions), and also samples from the posterior predictive distribution (unless you'd prefer to do it in R later on). For model 1, interpret each coefficient. 
+
+
+```{r}
+N <- length(d$switch)
+y <- as.numeric(d$switch) - 1
+arsenic <- d$arsenic - mean(d$arsenic)
+dist <- d$dist - mean(d$dist)
+covariate <- arsenic * dist
+
+log_arsenic = log(d$arsenic) - mean(log(d$arsenic))
+covariate2 <- log_arsenic * dist
+
+data <- list(N = N,
+             y = y,
+             arsenic = arsenic,
+             dist = dist,
+             covariate = covariate)
+
+data2 <- list(N = N,
+              y = y,
+              arsenic = log_arsenic,
+              dist = dist,
+              covariate = covariate2
+              )
+
+fit1 <- stan(file = "./q1b_stan.stan", data = data)
+fit2 <- stan(file = "./q1b_stan.stan", data = data2)
+```
+```{r}
+summary(fit1)$summary[c(1:4),]
+```
+* Answer
+
+For four coefficients. We find beta1 for distance is -0.0087 which is negative effect for probability to switch the well. Beta2 for distance is 0.4692 which has positive effect for probability to switch the well. Both of them make sense since the longer distance people are less likely to switch the well, the higher arsenic level people are more likely to switch the wells. However, for the covariate it is hard to interpret, but it also has a negative effect.
+
+c) Let $t(\boldsymbol{y})=\sum_{i=1}^{n} 1\left(y_{i}=1, a_{i}<0.82\right) / \sum_{i=1}^{n} 1\left(a_{i}<0.82\right)$ i.e. the proportion of households that switch with arsenic level less than 0.82. Calculate $t(\boldsymbol{y^{rep}})$ for each replicated dataset for each model, plot the resulting histogram for each model and compare to the observed value of $t(\boldsymbol{y})$. Calculate $P\left(t\left(\boldsymbol{y}^{r e p}\right)<t(\boldsymbol{y})\right)$ for each model. Interpret your findings. 
+```{r}
+inv_logit <- function(x){
+  result = 1/(1 + exp(-x))
+  return(result)
+}
+
+ty <- function(a,b){
+  c = a*b
+  cumb = cumsum(b)
+  cumc = cumsum(c)
+  result = cumc/cumb
+  return(result)
+}
+
+parameter_1 <- sapply(summary(fit1)$summary[c(5:3024),1], FUN = inv_logit)
+parameter_2 <- sapply(summary(fit2)$summary[c(5:3024),1], FUN = inv_logit)
+arse_82 = as.numeric(d$arsenic < 0.82)
+
+ty_model1 <- ty(parameter_1, arse_82)
+ty_model2 <- ty(parameter_2, arse_82)
+ty_real <- ty(y, arse_82)
+q3_data <- melt(data.frame(ty_model1 = ty_model1, ty_model2 = ty_model2))
+
+q3_data %>%
+  ggplot( aes(x=value, fill=variable)) +
+  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity')
+```
+
+
+d) Use the `loo` package to get estimates of the expected log pointwise predictive density for each point, $ELPD_i$. Based on $\sum_i ELPD_i$, which model is preferred?
+
+* Answer:
+The elpd for model 1 is -1967.8 and the elpd for model 2 is -1952.4. We could find the ELPD for model 2 is 15.4 more than model 1. So we would prefer model 2.
+```{r}
+loglik1<- as.matrix(fit1, pars = "log_lik")
+loo1 <- loo(loglik1)
+print(loo1)
+
+loglik2<- as.matrix(fit2, pars = "log_lik")
+loo2 <- loo(loglik2)
+print(loo2)
+loo_compare(loo1, loo2)
+```
+
+e) Create a scatter plot of the $ELPD_i$'s for Model 2 versus the $ELPD_i$'s for Model 1. Create another scatter plot of the difference in $ELPD_i$'s between the models versus log arsenic. In both cases, color the dots based on the value of $y_i$. Interpret both plots. 
+
+```{r}
+pointwise_elpd1 <- loo1$pointwise[,1]
+pointwise_elpd2 <- loo2$pointwise[,2]
+q1e_data <- data.frame(elpd1 = pointwise_elpd1, elpd2 = pointwise_elpd2, group = as.factor(y))
+
+ggplot(data = q1e_data, aes(x=pointwise_elpd1, y = pointwise_elpd2, color=group)) + geom_point()
+
+q1e_data$difference = pointwise_elpd1 - pointwise_elpd2
+ggplot(data = q1e_data, aes(x=log_arsenic, y = difference, color = group)) +
+  geom_point()
+```
+
+
+f) Given the outcome in this case is discrete, we can directly interpret the $ELPD_i$s. In particular, what is $\exp(ELPD_i)$? 
+
+* Answer
+
+Mathematically, the definition of $\exp(ELPD_i)$ is $p(y_i|y_{-i})$. Which is the expected predictive density of $y_i$ given all $\mathbb{y}$ except $y_i$. 
+
+
+g) For each model recode the $ELPD_i$'s to get $\hat{y}_{i}=E\left(Y_{i} | \boldsymbol{y}_{-i}\right)$. Create a binned residual plot, looking at the average residual $y_i - \hat{y}_i$ by arsenic for Model 1 and by log(arsenic) for Model 2. Split the data such that there are 40 bins. On your plots, the average residual should be shown with a dot for each bin. In addition, add in a line to represent +/- 2 standard errors for each bin. Interpret the plots for both models. 
+
+```{r, echo = F}
+#Create a dataframe we want
+exp_pointwise_elpd1 = data.frame(residual = abs(exp(pointwise_elpd1) - y),
+                                 arsenic = d$arsenic)
+exp_pointwise_elpd2 = data.frame(residual = abs(exp(pointwise_elpd2) - y),
+                                 log_arsenic = log(d$arsenic))
+
+#Sort those two dataframe
+exp_pointwise_elpd1 <- exp_pointwise_elpd1[order(exp_pointwise_elpd1$arsenic), ]
+exp_pointwise_elpd2 <- exp_pointwise_elpd2[order(exp_pointwise_elpd2$log_arsenic),]
+
+split_range = seq(0, 3020, 78)
+index1 = quantile(exp_pointwise_elpd1$arsenic, seq(0,1,0.025))
+index2 = quantile(exp_pointwise_elpd2$log_arsenic, seq(0,1,0.025))
+
+data_1g <- data.frame(matrix(nrow=1 , ncol = 4))
+colnames(data_1g) <- c("model", "mean", "sd", "range")
+
+for(i in c(1:length(split_range))){
+  index = split_range[i]
+  result1 = exp_pointwise_elpd1[index:(index+75),1]
+  result2 = exp_pointwise_elpd2[index:(index+75),1]
+  if(index == 2964){
+    result1 = exp_pointwise_elpd1[c(index:3020),1]
+    result2 = exp_pointwise_elpd2[c(index:3020),1]
+    }
+  current1 = c("model1", mean(result1), sd(result1), round(index1[i], 2))
+  current2 = c("model2", mean(result2), sd(result2), round(index2[i],2))
+  data_1g <- rbind(data_1g, current1,current2)
+}
+#Clean our data frame
+data_1g <- data_1g[-1,]
+for(i in c(2:3)){data_1g[,i] <- as.numeric(data_1g[,i])}
+
+p <- ggplot(data_1g[data_1g$model == "model1",], aes(x=range, y=mean)) + 
+   geom_bar(stat="identity", position=position_dodge()) +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2,
+                 position=position_dodge(.9)) + 
+  scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) + 
+  labs(y = "residual", x = "arsenic", title = "model 1")
+p
+
+p <- ggplot(data_1g[data_1g$model == "model2",], aes(x=range, y=mean)) + 
+   geom_bar(stat="identity", position=position_dodge()) +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2,
+                 position=position_dodge(.9)) + 
+  scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) + 
+  labs(y = "residual", x = "log(arsenic)", title = "model 2")
+p
+```
+
+\newpage
+
+# Maternal mortality
+
+This question relates to estimating the maternal mortality for countries worldwide. A maternal death is defined by the World Health Organization as "the death of a woman while pregnant or within 42 days of termination of pregnancy, irrespective of the duration and site of the pregnancy, from any cause related to or aggravated by the pregnancy or its management but not from accidental or incidental causes". The indicator we are interested in is the (non-AIDS) maternal mortality ratio (MMR) which is defined as the number of non-AIDS maternal deaths divided by the number of live births.
+
+In the data folder of the class repo there are two files relevant to this question. `mmr_data` contains information on, for a range of countries over a range of years:
+
+- Observations of the proportion of non-AIDS deaths that are maternal ($PM^{NA}$) 
+- Data source, most commonly from Vital Registration systems (VR)
+- The Gross Domestic Product (GDP) 
+- The General Fertility Rate (GFR) 
+- The average number of skilled attendants at birth (SAB)
+- The geographical region of the country
+- The total number of women, births, deaths to women of reproductive age (WRA), and the estimated proportion of all WRA deaths that are due to HIV/AIDS
+
+The `mmr_data` file will be used for fitting. Note that data on $PM^{NA}$ is not available for every country. 
+
+The `mmr_pred` file contains information on GDP, GFR, SAB, total number of births, deaths and women, and proportion of deaths that are due to HIV/AIDS, for every country at different time points (every five years from mid 1985 to mid 2015). Information in this file is used for producing estimates of MMR for countries without data, and for producing estimates centered at a particular time point. 
+
+Consider the following model 
+
+$$
+\begin{aligned}
+y_{i} | \eta_{c[i]}^{\text {country }}, \eta_{r[i]}^{\text {region }} & \sim N\left(\beta_{0}+\eta_{c[i]}^{\text {country }}+\eta_{r[i]}^{\text {region }}+\beta_{1} x_{i, 1}+\beta_{2} x_{i, 2}+\beta_{3} x_{i, 3}, \sigma_{y}^{2}\right) \\
+\eta_{c}^{\text {country }} & \sim N\left(0,\left(\sigma_{\eta}^{\text {country }}\right)^{2}\right), \text { for } c=1,2, \ldots, C \\
+\eta_{r}^{\text {region }} & \sim N\left(0,\left(\sigma_{\eta}^{\text {region }}\right)^{2}\right), \text { for } r=1,2, \ldots, R
+\end{aligned}
+$$
+where
+
+- $y_i$ is the $i$th observed $\log PM^{NA}$ in country $c[i]$ in region $r[i]$
+- $C$ is total number of countries and $R$ is total number of regions
+- $x_{i,1}$ is log(GDP)
+- $x_{i,2}$ is log(GFR)
+- $x_{i,3}$ is SAB
+
+
+\newpage
+
+a) Turn this model into a Bayesian model by specifying appropriate prior distributions for the hyper-parameters and fit the Bayesian model in Stan. Report the full model specification as well as providing the Stan model code.
+
+```{r}
+#Read and factorize the data
+q2_data <- read_csv("./mmr_data.csv")
+q2_validate <- read_csv("./mmr_pred.csv")
+
+#Extract the data from the training dataset
+N = length(q2_data$PM_na)
+C = length(unique(q2_validate$iso))
+R = length(unique(q2_validate$region))
+y = log(q2_data$PM_na)
+x1 = log(q2_data$GDP)
+x2 = log(q2_data$GFR)
+x3 = q2_data$SAB
+
+#Index the country, region of the training dataset using prediction dataset.
+q2_validate$Cindex = as.numeric(as.factor(q2_validate$iso))
+q2_validate$Rindex = as.numeric(as.factor(q2_validate$region))
+
+#Get the matching dataframe
+q2_partial = q2_validate[,c(1,10,12,13)]
+
+#Get the matched index
+q2_country = merge(q2_data[,1], unique(q2_partial[,c(1,3)]), by="iso")
+q2_region = merge(x = q2_data[,13], y = unique(q2_partial[,c(2,4)]), by="region")
+
+country = q2_country$Cindex
+region = q2_region$Rindex
+
+data = list(N = N,
+            C = C,
+            R = R,
+            y = y,
+            x1 = x1,
+            x2 = x2,
+            x3 = x3,
+            country = country,
+            region = region)
+
+q2_fit = stan(file = "./q2a_stan.stan", data = data)
+summary(q2_fit)$summary[c("beta_0", "beta_1", "beta_2", "beta_3"),]
+```
+
+
+Hint: I would recommend indexing countries and regions, and calculating $C$ and $R$ based on the full set of countries contained in `mmr_pred`, rather than the subset contained in `mmr_data`. This will mean you will automatically get estimates for $\eta$ for every country and region, even the missing ones, which will help later on. 
+
+
+
+
+
+b) Check the trace plots and effective sample size to check convergence and mixing. Summarize your
+findings using a few example trace plots and effective sample sizes.
+c) Plot (samples of the) prior and posterior distributions for \(\beta_{0}, \sigma_{y}, \sigma_{\eta}^{\text {country}}\) and \(\sigma_{\eta}^{\text {region}}\). Interpret the estimates of $\beta_1$ and $\beta_3$.
+d) Use the MCMC samples to construct 95% credible intervals for the $PM^{NA}$ for 5-year periods from 1985.5 to 2015.5 for one country with data and one country without any observed $PM^{NA}$ values. Provide point estimates and CIs in a table and a nice plot. Add the observed data to the plot as well (for the country that has it).
+e) The non-AIDS MMR is given by
+$$
+\begin{aligned}
+M M R^{N A} &=\frac{\# \text { Non-AIDS maternal deaths }}{\# \text { Births }} \\
+&=\frac{\# \text { Non-AIDS maternal deaths }}{\# \text { Non-AIDS deaths }} \cdot \frac{\# \text { Non-AIDS deaths }}{\# \text { Births }} \\
+&=P M^{N A} \cdot \frac{\# \text { Deaths } *(1-\text { prop AIDS) } }{\text { Births }}
+\end{aligned}
+$$
+where deaths and births are to all women of reproductive age in the country-period of interest.
+Use this formula, your answers from d) and the data in `mmr_pred` to obtain point estimates and CIs for the non-AIDS MMR for the two countries you chose in (d) in the year 2010.5.
+f) In the model used so far, we assume that error variance $\sigma_{y}^{2}$ is the same for all observations but this is probably not a very realistic assumption. Let’s explore if the model fit changes if we would estimate two variance parameters: one for VR data (denoted by $\sigma_{\text{VR}}^{2}$) and one for non-VR data (denoted by $\sigma_{\text{non-VR}}^{2}$). Write out the model specification for this extended model, give the Stan model code, and fit the model. Show priors and posteriors for $\sigma_{\text{VR}}$ and $\sigma_{\text{non-VR}}$ and construct a plot with data for a country with VR data, with point estimates and CIs from the models with and without equal variance.
+
+\newpage
+
+# Research proposal
+
+The final project for this class involves exploring a research question that you are interested in using a dataset of your choice. For the research proposal, I'm interested in finding out about your topic, and seeing some EDA based on your dataset of choice. Please describe 
+
+- your research question(s) of interest, and why they are of interest (if there's an obvious literature, feel free to cite a few papers)
+- the dataset you plan to use
+- your main dependent variable of interest
+- your main independent variables of interest (including control variables)
+
+
+## Exploratory data analysis
+
+As part of your research proposal please undertake some basic EDA to illustrate the characteristics of your dataset, patterns in the raw data, and to present descriptive statistics related to your data and your research question. 
+
+There is no set format, but here are a few pointers of things to look at
+
+- **General characteristics of dataset** and **Summary statistics of variables of interest**: for example, how many observations, how were the data collected (is the dataset representative of the population of interest?); you could present a table of summary statistics of main variables, including things like number of observations, mean/median/sd (if a continuous variable), proportions by group, etc...
+- **Missing data**: If your dataset does not have any missing observations, then fine to just say this (don't need to do EDA graphs or discuss). If you have missing observations, summarize what is missing, and give a brief discussion about whether or not you think missingness may be a problem (e.g. is there more likely to be missing data for some groups compared to others?)
+- **Graphs showing both univariate and bivariate patterns**: likely to be interested in both univariate patterns (e.g., the distribution of continuous variables, proportions for categorical outcomes...) and bivariate patterns (e.g. scatterplots, proportions/boxplots by group, trends over time...).
+
+
+## What to submit
+
+It is expected that you present and write up your findings in Rmd. You should submit:
+
+- your R Markdown file; and
+- the knitted PDF resulting from your R Markdown file. 
+
+If your dataset is reasonably small (and publicly available), then it would be great if you could submit that, too. 
+
+Please submit files via Quercus. 
+
+
+
