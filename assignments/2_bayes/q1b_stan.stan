@@ -39,9 +39,12 @@ model {
 }
 generated quantities {
   vector[N] log_lik;
-  vector[N] logit_p;  
+  vector[N] log_weight_rep;
+  vector[N] logit_p;
+  
   for (n in 1:N) {
     log_lik[n] = bernoulli_logit_lpmf(y[n] | beta0 + beta1 * dist[n] + beta2 * arsenic[n] + beta3 * covariate[n]);
+    log_weight_rep[n] = bernoulli_logit_rng(beta0 + beta1 * dist[n] + beta2 * arsenic[n] + beta3 * covariate[n]);
   }
   
   for (i in 1:N)

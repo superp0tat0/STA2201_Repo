@@ -11,11 +11,12 @@
 
 // The input data is a vector 'y' of length 'N'.
 data {
-  int<lower=1> N;
-  int<lower=1> C;
-  int<lower=1> R;
-  int<lower=1, upper=C> country[N];
-  int<lower=1, upper=R> region[N];
+  int<lower=0> N;
+  int<lower=0> C;
+  int<lower=0> R;
+  int<lower=0, upper=C> country[N];
+  int<lower=0, upper=R> region[N];
+  int<lower=1, upper=2> VR[N];
   vector[N] x1;
   vector[N] x2;
   vector[N] x3;
@@ -29,7 +30,7 @@ parameters {
   real beta_1;
   real beta_2;
   real beta_3;
-  real<lower=0> sigma_y;
+  vector<lower=0>[2] sigma_y;
   real<lower=0> sigma_country;
   real<lower=0> sigma_region;
   vector[C] eta_country;
@@ -42,6 +43,14 @@ parameters {
 model {
   vector[N] y_hat;
   
+  for (i in 1:N){
+    y[i] ~ normal(beta_0 + eta_country[country[i]]
+                       + eta_region[region[i]]
+                       + beta_1 * x1[i]
+                       + beta_2 * x2[i]
+                       + beta_3 * x3[i], sigma_y[VR[i]]);
+  }
+  
   eta_country ~ normal(0, sigma_country);
   eta_region ~ normal(0, sigma_region);
   beta_0 ~ normal(0,1);
@@ -51,16 +60,6 @@ model {
   sigma_country ~ normal(0,1);
   sigma_region ~ normal(0,1);
   sigma_y ~ normal(0,1);
-  
-  for (i in 1:N){
-    y_hat[i] = beta_0 + eta_country[country[i]]
-                       + eta_region[region[i]]
-                       + beta_1 * x1[i]
-                       + beta_2 * x2[i]
-                       + beta_3 * x3[i];
-  }
-  
-  y ~ normal(y_hat, sigma_y);
 }
 
 

@@ -1,0 +1,64 @@
+---
+title: "Untitled"
+author: "Siyi Wei"
+date: "26/03/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+sigma_0 = 2
+N = 258
+theta = rep(0,N)
+obs = rep(0,N)
+for(i in c(1:N)){
+  m = rnorm(1, 0, sigma_0)
+  obs[i] = rnorm(1, m, 1)
+  theta[i] = m
+}
+
+loss = rep(0,N)
+mle_loss = rep(0,N)
+fc <- function(X,b){
+  result = (1- b/sum(X^2)) * X
+  return(result)
+}
+
+for(c in c(1:N)){
+  result = fc(obs, c)
+  error = sum((result - theta)^2)
+  mle_loss[c] = sum((theta - obs)^2)
+  loss[c] = error
+}
+
+plot(c(1:N), loss, type="b", pch=19, col="red", xlab="n", ylab="MSE")
+# Add a line
+lines(c(1:N), mle_loss, pch=18, col="blue", type="b", lty=2)
+legend(1, 95, legend=c("MLE", "James-Stein Estimator"),
+       col=c("red", "blue"), lty=1:2, cex=0.8)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+x<-1:10; y1=x*x; y2=2*y1
+plot(x, y1, type="b", pch=19, col="red", xlab="x", ylab="y")
+# Add a line
+lines(x, y2, pch=18, col="blue", type="b", lty=2)
+# Add a legend
+legend(1, 95, legend=c("Line 1", "Line 2"),
+       col=c("red", "blue"), lty=1:2, cex=0.8)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

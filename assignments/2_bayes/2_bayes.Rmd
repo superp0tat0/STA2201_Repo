@@ -41,7 +41,18 @@ $$
 
 The data we are using for this question are here: http://www.stat.columbia.edu/~gelman/arm/examples/arsenic/wells.dat and you can load them in directly using
 
-```{r, eval = FALSE}
+```{r, include=FALSE}
+library(ggplot2)
+library(caret)
+library(rstan)
+library(tidyverse)
+library(tidybayes)
+library(reshape2)
+library(loo)
+library(bayesplot)
+library(rstanarm)
+library(extraDistr)
+library(gt)
 d <- read.table(url("http://www.stat.columbia.edu/~gelman/arm/examples/arsenic/wells.dat"))
 ```
 
@@ -61,22 +72,19 @@ a) Do an exploratory data analysis illustrating the relationship between well-sw
 | arsenic  | 0.51  |0.82   |1.30   |2.20   |9.65   |
 | distance  |  0.387 |21.117   |36.761   |64.04   |339.531   |
 
-  We then want to explore the realtionship between switch well and arisenic. From the graph below we could see the suggestion plays a key role. The peak of switch and not switch are both near 0.5. However, there are still more people prefer not to switch even a little above 0.5. This trend change when arsenic is close to 1.25. Where more people prefer to switch the well.
-  
+  We then want to explore the realtionship between switch well and arisenic. From the graph below we could see there is a postive relation between arsenic and switch, and a negative relation between distance and switch. Both of them has a quite long tails, which indicate the existance of some outliers.
+  The peak of switch and not switch are both near 0.5. However, there are still more people prefer not to switch even a little above 0.5. This trend change when arsenic is close to 1.25. Where more people prefer to switch the well.
   However for the distance it is not the case. We could find the peak for switch and not to switch are both at 25, although people prefer to switch the well at 25. This trend changes when the distance is greater than 75. More people prefer not to switch at this point.
   
   
-```{r, echo = F}
-library(ggplot2)
-library(caret)
-library(rstan)
-library(tidyverse)
+```{r, echo=F}
 d$switch <- as.factor(d$switch)
 ggplot(data = d, aes(x=arsenic, fill=switch)) + 
   geom_density(alpha=.3)
+ggplot(data = d, aes(x=arsenic, fill=switch)) + geom_boxplot()
 ggplot(data = d, aes(x=dist, fill=switch)) + 
   geom_density(alpha=.3)
-
+ggplot(data = d, aes(x=dist, fill=switch)) + geom_boxplot()
 ```
 
 \newpage
@@ -96,10 +104,17 @@ where $d_i$ is distance and $a_i$ is arsenic level.
 
 b) Fit both of these models using Stan. Put $N(0,1)$ priors on all the $\beta$s. You should generate pointwise log likelihood estimates (to be used in later questions), and also samples from the posterior predictive distribution (unless you'd prefer to do it in R later on). For model 1, interpret each coefficient. 
 
+* Answer
 
-```{r}
+|beta_0|beta_1 |beta_2 |beta_3 |
+|---|---|---|---|
+| 0.3407  |-0.0095|0.4700|-0.0018|
+
+First we show the coefficient in a table. Since we used a logit function during the transformation. We could use odds ratio to interpret the coefficients. We could use beta_1 as an example but the other coefficients follow the same logic. Since we could define $logit(p_i) = log(\frac{P(y=1|X)}{P(y=0|X)}) = \beta_0 + \beta_1(d_i - \bar d) + \beta_2(a_i - \bar a) + \beta_3(d_i - \bar d)(a_i - \bar a)$. For every one unit increase in $(d_i - \bar d)$, which is equivalent to -0.0095 increase in the logit. There will be exp(-.0095) = 0.9905 increase in the odds $\frac{P(y=1|X)}{P(y=0|X)}$.
+
+```{r, echo = T, results = 'hide'}
 N <- length(d$switch)
-y <- as.numeric(d$switch) - 1
+y <- as.numeric(d$switch)-1
 arsenic <- d$arsenic - mean(d$arsenic)
 dist <- d$dist - mean(d$dist)
 covariate <- arsenic * dist
@@ -120,43 +135,40 @@ data2 <- list(N = N,
               covariate = covariate2
               )
 
-fit1 <- stan(file = "./q1b_stan.stan", data = data)
-fit2 <- stan(file = "./q1b_stan.stan", data = data2)
+fit1 <- stan(file = "./q1b_stan.stan", data = data, iter = 500)
+fit2 <- stan(file = "./q1b_stan.stan", data = data2, iter = 500)
 ```
+
 ```{r}
 summary(fit1)$summary[c(1:4),]
 ```
-* Answer
-
-For four coefficients. We find beta1 for distance is -0.0087 which is negative effect for probability to switch the well. Beta2 for distance is 0.4692 which has positive effect for probability to switch the well. Both of them make sense since the longer distance people are less likely to switch the well, the higher arsenic level people are more likely to switch the wells. However, for the covariate it is hard to interpret, but it also has a negative effect.
 
 c) Let $t(\boldsymbol{y})=\sum_{i=1}^{n} 1\left(y_{i}=1, a_{i}<0.82\right) / \sum_{i=1}^{n} 1\left(a_{i}<0.82\right)$ i.e. the proportion of households that switch with arsenic level less than 0.82. Calculate $t(\boldsymbol{y^{rep}})$ for each replicated dataset for each model, plot the resulting histogram for each model and compare to the observed value of $t(\boldsymbol{y})$. Calculate $P\left(t\left(\boldsymbol{y}^{r e p}\right)<t(\boldsymbol{y})\right)$ for each model. Interpret your findings. 
+
+* Answer
+
+Below we could see the plot for two different models. We could see the mean of $t(y^{rep})$ from the second model is much closer to the real $t(y)$ than the first model. Then if we calculate $P(t(y^{rep}) < t(y))$, for the first model is 0.4% and for the second model is 27%. So from those two findings we could make our initial conclusion, the second model fit the data better than the first model.
+
 ```{r}
-inv_logit <- function(x){
-  result = 1/(1 + exp(-x))
+real_ty <- sum(d$switch == 1 & d$arsenic < 0.82)/sum(d$arsenic < 0.82)
+ty <- function(X,Y){
+  result = rep(0,nrow(X))
+  for(j in c(1:nrow(X))){
+    result[j] = sum(X[j,] == 1 & Y)/sum(Y)
+  }
   return(result)
 }
+yrep1 <- rstan::extract(fit1)[["log_weight_rep"]]
+yrep1_data <- ty(yrep1, d$arsenic < .82)
+hist(yrep1_data)
+abline(v = real_ty, col="red", lwd=5)
+print(sum(yrep1_data < real_ty)/nrow(yrep1))
 
-ty <- function(a,b){
-  c = a*b
-  cumb = cumsum(b)
-  cumc = cumsum(c)
-  result = cumc/cumb
-  return(result)
-}
-
-parameter_1 <- sapply(summary(fit1)$summary[c(5:3024),1], FUN = inv_logit)
-parameter_2 <- sapply(summary(fit2)$summary[c(5:3024),1], FUN = inv_logit)
-arse_82 = as.numeric(d$arsenic < 0.82)
-
-ty_model1 <- ty(parameter_1, arse_82)
-ty_model2 <- ty(parameter_2, arse_82)
-ty_real <- ty(y, arse_82)
-q3_data <- melt(data.frame(ty_model1 = ty_model1, ty_model2 = ty_model2))
-
-q3_data %>%
-  ggplot( aes(x=value, fill=variable)) +
-  geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity')
+yrep2 <- rstan::extract(fit2)[["log_weight_rep"]]
+yrep2_data <- ty(yrep2, d$arsenic < .82)
+hist(yrep2_data)
+abline(v = real_ty, col="red", lwd=5)
+print(sum(yrep2_data < real_ty)/nrow(yrep2))
 ```
 
 
@@ -177,9 +189,14 @@ loo_compare(loo1, loo2)
 
 e) Create a scatter plot of the $ELPD_i$'s for Model 2 versus the $ELPD_i$'s for Model 1. Create another scatter plot of the difference in $ELPD_i$'s between the models versus log arsenic. In both cases, color the dots based on the value of $y_i$. Interpret both plots. 
 
-```{r}
+* Answer
+
+It is a little hard to interpret the first plot. But we could see a trend that the first elpd model are often less than the second model elpd.
+The second graph is much clearer. We could see for the not switch group. There is a concave down trends as the log(arsenic). Especially when log(arsenic) gets larger where the second model has a much larger elpd than the first model. Then for the switch group there is a concave up trend, but the elpd difference between two models are quite close to 0 all the time.
+
+```{r, echo=F}
 pointwise_elpd1 <- loo1$pointwise[,1]
-pointwise_elpd2 <- loo2$pointwise[,2]
+pointwise_elpd2 <- loo2$pointwise[,1]
 q1e_data <- data.frame(elpd1 = pointwise_elpd1, elpd2 = pointwise_elpd2, group = as.factor(y))
 
 ggplot(data = q1e_data, aes(x=pointwise_elpd1, y = pointwise_elpd2, color=group)) + geom_point()
@@ -194,59 +211,50 @@ f) Given the outcome in this case is discrete, we can directly interpret the $EL
 
 * Answer
 
-Mathematically, the definition of $\exp(ELPD_i)$ is $p(y_i|y_{-i})$. Which is the expected predictive density of $y_i$ given all $\mathbb{y}$ except $y_i$. 
+Mathematically, the definition of $\exp(ELPD_i)$ is $p(y_i|y_{-i})$. Which is the expected predictive density of $y_i$ given all $Y$ except $y_i$. 
 
 
 g) For each model recode the $ELPD_i$'s to get $\hat{y}_{i}=E\left(Y_{i} | \boldsymbol{y}_{-i}\right)$. Create a binned residual plot, looking at the average residual $y_i - \hat{y}_i$ by arsenic for Model 1 and by log(arsenic) for Model 2. Split the data such that there are 40 bins. On your plots, the average residual should be shown with a dot for each bin. In addition, add in a line to represent +/- 2 standard errors for each bin. Interpret the plots for both models. 
 
-```{r, echo = F}
+* Answer
+
+For both of the redisual plot. We could see the confidence interval gets narrower when the log(arsenic) gets larger. The residual from the second model is quite similar as the first model regardless the log transform. For the first model binned residual plot, we could see the average residual for different bins stay close to 0 most of the time. Although there is a little shift on the first few bins. For the second model binned residual plot. We could see its residual estimation are closer to 0 compare to model 1, also it has a smaller confidence intervals.
+These conclusions confirm our hypothesis from previous questions. The second model fits better the the first model.
+
+```{r}
 #Create a dataframe we want
-exp_pointwise_elpd1 = data.frame(residual = abs(exp(pointwise_elpd1) - y),
-                                 arsenic = d$arsenic)
-exp_pointwise_elpd2 = data.frame(residual = abs(exp(pointwise_elpd2) - y),
-                                 log_arsenic = log(d$arsenic))
+residual = data.frame(residual1 = ifelse(y == 1, y - exp(pointwise_elpd1), y - 1 + exp(pointwise_elpd1)),
+                      residual2 = ifelse(y == 1, y - exp(pointwise_elpd2), y - 1 + exp(pointwise_elpd2)),
+                      split = as.numeric(cut_number(d$arsenic, 40)),
+                      arsenic = d$arsenic,
+                      log_arsenic = log(d$arsenic), 40)
 
-#Sort those two dataframe
-exp_pointwise_elpd1 <- exp_pointwise_elpd1[order(exp_pointwise_elpd1$arsenic), ]
-exp_pointwise_elpd2 <- exp_pointwise_elpd2[order(exp_pointwise_elpd2$log_arsenic),]
-
-split_range = seq(0, 3020, 78)
-index1 = quantile(exp_pointwise_elpd1$arsenic, seq(0,1,0.025))
-index2 = quantile(exp_pointwise_elpd2$log_arsenic, seq(0,1,0.025))
-
-data_1g <- data.frame(matrix(nrow=1 , ncol = 4))
-colnames(data_1g) <- c("model", "mean", "sd", "range")
-
-for(i in c(1:length(split_range))){
-  index = split_range[i]
-  result1 = exp_pointwise_elpd1[index:(index+75),1]
-  result2 = exp_pointwise_elpd2[index:(index+75),1]
-  if(index == 2964){
-    result1 = exp_pointwise_elpd1[c(index:3020),1]
-    result2 = exp_pointwise_elpd2[c(index:3020),1]
-    }
-  current1 = c("model1", mean(result1), sd(result1), round(index1[i], 2))
-  current2 = c("model2", mean(result2), sd(result2), round(index2[i],2))
-  data_1g <- rbind(data_1g, current1,current2)
+se <- function(x){
+  return(sd(x)/sqrt(length(x)))
 }
-#Clean our data frame
-data_1g <- data_1g[-1,]
-for(i in c(2:3)){data_1g[,i] <- as.numeric(data_1g[,i])}
 
-p <- ggplot(data_1g[data_1g$model == "model1",], aes(x=range, y=mean)) + 
-   geom_bar(stat="identity", position=position_dodge()) +
-  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2,
-                 position=position_dodge(.9)) + 
-  scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) + 
-  labs(y = "residual", x = "arsenic", title = "model 1")
+model_1 <- residual %>%
+  select(residual1, arsenic, split) %>%
+  group_by(split) %>%
+  summarize(residual = mean(residual1), sd = se(residual1), arsenic = mean(arsenic))
+
+model_2 <- residual %>%
+  select(residual2, log_arsenic, split) %>%
+  group_by(split) %>%
+  summarize(residual = mean(residual2), sd = se(residual2), log_arsenic = mean(log_arsenic))
+
+p <- ggplot(model_1, aes(x=arsenic, y=residual)) + 
+   geom_point(position=position_dodge()) +
+  geom_errorbar(aes(ymin=residual-2*sd, ymax=residual+2*sd)) + 
+  scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) +
+  labs(y = "average residual", x = "arsenic", title = "model 1")
 p
 
-p <- ggplot(data_1g[data_1g$model == "model2",], aes(x=range, y=mean)) + 
-   geom_bar(stat="identity", position=position_dodge()) +
-  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2,
-                 position=position_dodge(.9)) + 
-  scale_x_discrete(guide = guide_axis(check.overlap = TRUE)) + 
-  labs(y = "residual", x = "log(arsenic)", title = "model 2")
+p <- ggplot(model_2, aes(x=log_arsenic, y=residual)) + 
+   geom_point(position=position_dodge()) +
+  geom_errorbar(aes(ymin=residual-2*sd, ymax=residual+2*sd))+
+  scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+
+  labs(y = "average residual", x = "log(arsenic)", title = "model 2")
 p
 ```
 
@@ -292,15 +300,20 @@ where
 
 a) Turn this model into a Bayesian model by specifying appropriate prior distributions for the hyper-parameters and fit the Bayesian model in Stan. Report the full model specification as well as providing the Stan model code.
 
-```{r}
+* Answer
+
+Since the country name has different specifications on pred and raw datasets. I choose to use the iso as their country specification. The data specification could be view below and the model code are included in the folder.
+
+```{r, echo = T, results = 'hide'}
 #Read and factorize the data
 q2_data <- read_csv("./mmr_data.csv")
 q2_validate <- read_csv("./mmr_pred.csv")
 
 #Extract the data from the training dataset
-N = length(q2_data$PM_na)
+N = nrow(q2_data)
 C = length(unique(q2_validate$iso))
 R = length(unique(q2_validate$region))
+
 y = log(q2_data$PM_na)
 x1 = log(q2_data$GDP)
 x2 = log(q2_data$GFR)
@@ -311,14 +324,13 @@ q2_validate$Cindex = as.numeric(as.factor(q2_validate$iso))
 q2_validate$Rindex = as.numeric(as.factor(q2_validate$region))
 
 #Get the matching dataframe
-q2_partial = q2_validate[,c(1,10,12,13)]
+q2_partial = unique(q2_validate[,c(1,10,12,13)])
 
 #Get the matched index
-q2_country = merge(q2_data[,1], unique(q2_partial[,c(1,3)]), by="iso")
-q2_region = merge(x = q2_data[,13], y = unique(q2_partial[,c(2,4)]), by="region")
+q2_data = left_join(q2_data, q2_partial, by=c("iso", "region"))
 
-country = q2_country$Cindex
-region = q2_region$Rindex
+country = q2_data$Cindex
+region = q2_data$Rindex
 
 data = list(N = N,
             C = C,
@@ -330,7 +342,7 @@ data = list(N = N,
             country = country,
             region = region)
 
-q2_fit = stan(file = "./q2a_stan.stan", data = data)
+q2_fit = stan(file = "./q2a_stan.stan", data = data, iter = 500)
 summary(q2_fit)$summary[c("beta_0", "beta_1", "beta_2", "beta_3"),]
 ```
 
@@ -341,10 +353,141 @@ Hint: I would recommend indexing countries and regions, and calculating $C$ and 
 
 
 
-b) Check the trace plots and effective sample size to check convergence and mixing. Summarize your
-findings using a few example trace plots and effective sample sizes.
+b) Check the trace plots and effective sample size to check convergence and mixing. Summarize your findings using a few example trace plots and effective sample sizes.
+
+* Answer
+
+From the trace plot, we suspect sigma region is not mixing very well. However, when we check the effective sample size of sigma_region. It is as goog as the other parameters from the reports. So our simulation should be good.
+To include more details. Sigma y has more effective samples. The other parameters are roughly the same, which is about (250 ~ 400). Compare to 2000 are good enough.
+```{r}
+traceplot(q2_fit)
+summary(q2_fit)$summary[c(1:7), "n_eff"] %>% t() %>% as.data.frame() %>% gt()
+```
+
+
 c) Plot (samples of the) prior and posterior distributions for \(\beta_{0}, \sigma_{y}, \sigma_{\eta}^{\text {country}}\) and \(\sigma_{\eta}^{\text {region}}\). Interpret the estimates of $\beta_1$ and $\beta_3$.
+
+* Answer
+
+For the coefficient for $\beta_1$. Intuitively we could think there is a linear negative effect between log(GDP) and log(Proportion of the non AIDS deaths that are maternal). Since both the predicator and the response variable are log transformed. We could interpret the coefficient as the percent increase in the response variable for evert 1% increase in the predicator variable. In our case, $\beta_1$ is about -0.20. Which represents for every 1% increase in the GDP, there will be a 0.2% decrease in the PM_NA.
+
+For the coefficient for $\beta_3$. Only PM_NA is log transformed. Since only the response variable is log transformed. We could exponentiate the coefficient and subtract one to give the percent increase in the response variable for every one unit increase in the predicator variable. In our case, $\beta_3$ is about -0.7597753. Since exp(-0.76) - 1 = -0.53. It represents for every one unit increase in the SAB, there will be 53% decrease in the PM_NA.
+
+Reference: https://data.library.virginia.edu/interpreting-log-transformations-in-a-linear-model/
+
+```{r}
+samples <- q2_fit %>% gather_draws(beta_0)
+samples %>% 
+  filter(.variable == "beta_0") %>% 
+  ggplot(aes(.value, color = "posterior")) + geom_density(size = 1) + 
+  xlim(c(-5, 5)) + 
+  stat_function(fun = dnorm, 
+        args = list(mean = 0, 
+                    sd = 1), 
+        aes(colour = 'prior'), size = 1) +
+  scale_color_manual(name = "", values = c("prior" = "red", "posterior" = "black")) + 
+  ggtitle("Prior and posterior for beta 0") + 
+  xlab("score")
+
+samples <- q2_fit %>% gather_draws(sigma_y)
+samples %>% 
+  filter(.variable == "sigma_y") %>% 
+  ggplot(aes(.value, color = "posterior")) + geom_density(size = 1) + 
+  xlim(c(-1, 1)) + 
+  stat_function(fun = dhnorm, 
+        args = list(sigma = 1), 
+        aes(colour = 'prior'), size = 1) +
+  scale_color_manual(name = "", values = c("prior" = "red", "posterior" = "black")) + 
+  ggtitle("Prior and posterior for sigma y") + 
+  xlab("score")
+
+samples <- q2_fit %>% gather_draws(sigma_country)
+samples %>% 
+  filter(.variable == "sigma_country") %>% 
+  ggplot(aes(.value, color = "posterior")) + geom_density(size = 1) +
+  stat_function(fun = dhnorm, 
+        args = list(sigma = 1), 
+        aes(colour = 'prior'), size = 1) +
+  scale_color_manual(name = "", values = c("prior" = "red", "posterior" = "black")) + 
+  ggtitle("Prior and posterior for sigma country") + 
+  xlab("score")
+
+samples <- q2_fit %>% gather_draws(sigma_region)
+samples %>% 
+  filter(.variable == "sigma_region") %>% 
+  ggplot(aes(.value, color = "posterior")) + geom_density(size = 1) + 
+  xlim(c(-1, 1)) + 
+  stat_function(fun = dhnorm, 
+        args = list(sigma = 1), 
+        aes(colour = 'prior'), size = 1) +
+  scale_color_manual(name = "", values = c("prior" = "red", "posterior" = "black")) + 
+  ggtitle("Prior and posterior for sigma region") + 
+  xlab("score")
+```
+```{r}
+summary(q2_fit)$summary[c(2,4),]
+```
+
+
 d) Use the MCMC samples to construct 95% credible intervals for the $PM^{NA}$ for 5-year periods from 1985.5 to 2015.5 for one country with data and one country without any observed $PM^{NA}$ values. Provide point estimates and CIs in a table and a nice plot. Add the observed data to the plot as well (for the country that has it).
+
+* Answer:
+We choose "VNM" Vietnem to be the country that is not in the dataset. Its country index is 175 and region index is 11. We also choose "KWT" Kuwait to be the country that in the dataset. Its country index is 90 and region index is 16.
+Then we retrive the raw data from the prediction dataset and plot it on the graph, which has been shown below. We also attached the table which include the 95% CI and the point estimates. The plot aligns with our intuition. The condifence interval for unobserved data is large and for the observed data is small.
+
+|   | 1985  | 1990  | 1995  | 2000  | 2005  | 2010  | 2015  |
+|---|---|---|---|---|---|---|---|
+| VNM  | 0.155|0.118|0.072|0.044|0.036|0.031|0.027 |
+| Lower CI  |0.023|0.018|0.011|0.007|0.006|0.005|0.004|
+| Upper CI  | 0.287|0.217|0.132|0.080|0.066|0.057|0.049 |
+
+|   | 1985  | 1990  | 1995  | 2000  | 2005  | 2010  | 2015  |
+|---|---|---|---|---|---|---|---|
+| KWT  |  0.032|0.015|0.017|0.016|0.013|0.013|0.012 |
+| observed_KWT  |   | 0.0197  |  0.0151 | 0.0128  | 0.0102  |   |   |
+| Lower CI  |   0.021|0.010|0.011|0.011|0.009|0.009|0.008   |
+| Upper CI  |   0.043|0.020|0.022|0.021|0.017|0.017|0.016  |
+```{r}
+parameters = rstan::extract(q2_fit)
+beta0 = parameters$beta_0
+beta1 = parameters$beta_1
+beta2 = parameters$beta_2
+beta3 = parameters$beta_3
+
+eta_ckmt = parameters$eta_country[,90]
+eta_rkmt = parameters$eta_region[,16]
+
+eta_cvnm = parameters$eta_country[,175]
+eta_rvnm = parameters$eta_region[,11]
+
+kwt = q2_validate[q2_validate$iso == "KWT",]
+kwt$pred = 0; kwt$sd = 0
+vnm = q2_validate[q2_validate$iso == "VNM",]
+vnm$pred = 0; vnm$sd = 0
+obs_kwt = q2_data[q2_data$iso == "KWT", ]
+
+for(j in c(1:nrow(kwt))){
+  pred = exp(beta0 + eta_ckmt + eta_rkmt + beta1 * log(kwt$GDP[j]) + beta2*log(kwt$GFR[j]) + beta3*kwt$SAB[j])
+  kwt$pred[j] = mean(pred)
+  kwt$sd[j] = sd(pred)
+}
+
+for(i in c(1:nrow(vnm))){
+  pred = exp(beta0 + eta_cvnm + eta_rvnm + beta1 * log(vnm$GDP[i]) + beta2*log(vnm$GFR[i]) + beta3*vnm$SAB[i])
+  vnm$pred[i] = mean(pred)
+  vnm$sd[i] = sd(pred)
+}
+
+q2d_data = rbind(kwt, vnm)
+
+ggplot(data = q2d_data, aes(x=mid.date, y=pred, color = iso)) + geom_line() + 
+  geom_ribbon(aes(ymin=pred - 2*sd,ymax=pred+2*sd),alpha=0.3) + 
+  geom_point(data = obs_kwt, aes(x=mid.date, y=PM_na), size=2) + 
+  xlab("Date in Year") + ylab("Prediction of PM_na")
+
+```
+
+
 e) The non-AIDS MMR is given by
 $$
 \begin{aligned}
@@ -355,7 +498,107 @@ M M R^{N A} &=\frac{\# \text { Non-AIDS maternal deaths }}{\# \text { Births }} 
 $$
 where deaths and births are to all women of reproductive age in the country-period of interest.
 Use this formula, your answers from d) and the data in `mmr_pred` to obtain point estimates and CIs for the non-AIDS MMR for the two countries you chose in (d) in the year 2010.5.
+
+* Answer
+We follow the similar process to obtain the point estimates and confidence intervals for KWT and VNM. The confidence intervals could be viewed as below
+
+|   |  Point Estimate | Upper CI  | Lower CI  |
+|---|---|---|---|
+| KWT | 7.069312e-05  |  9.432219e-05 | 4.706405e-05  |
+| VNM  | 0.0006301146  |  0.0011581717 | 0.0001020575  |
+```{r}
+pmna1 = exp(beta0 + eta_ckmt + eta_rkmt + beta1 * log(kwt$GDP[6]) +
+              beta2*log(kwt$GFR[6]) + beta3*kwt$SAB[6])
+pred = pmna1 * (kwt$Deaths[6] * (1-kwt$prop.AIDS[6]))/kwt$Births[6]
+kwt_mmr_mean = mean(pred)
+kwt_mmr_sd = sd(pred)
+
+pmna2 = exp(beta0 + eta_cvnm + eta_rvnm + beta1 * log(vnm$GDP[6]) + 
+             beta2*log(vnm$GFR[6]) + beta3*vnm$SAB[6])
+pred = pmna2 * (vnm$Deaths[6] * (1-vnm$prop.AIDS[6]))/vnm$Births[6]
+vnm_mmr_mean = mean(pred)
+vnm_mmr_sd = sd(pred)
+
+print(c(kwt_mmr_mean - 2*kwt_mmr_sd, kwt_mmr_mean + 2*kwt_mmr_sd))
+print(c(vnm_mmr_mean - 2*vnm_mmr_sd, vnm_mmr_mean + 2*vnm_mmr_sd))
+```
+
+
 f) In the model used so far, we assume that error variance $\sigma_{y}^{2}$ is the same for all observations but this is probably not a very realistic assumption. Let’s explore if the model fit changes if we would estimate two variance parameters: one for VR data (denoted by $\sigma_{\text{VR}}^{2}$) and one for non-VR data (denoted by $\sigma_{\text{non-VR}}^{2}$). Write out the model specification for this extended model, give the Stan model code, and fit the model. Show priors and posteriors for $\sigma_{\text{VR}}$ and $\sigma_{\text{non-VR}}$ and construct a plot with data for a country with VR data, with point estimates and CIs from the models with and without equal variance.
+
+* Answer
+First we create the vr data with 1(non vr) and 2(vr data). Then we could retrieve the following prior posterior plot from the model. We could see the sigma for VR data is larger than the sigma for non VR data.
+We then select the same country KWT in 2(d), which is VR data. Then the point estimates and confidence intervals with and without equal variance could be viewed as below. I also plot it in a graph. Where we could see there is not huge difference.
+
+|   | 1985  | 1990  | 1995  | 2000  | 2005  | 2010  | 2015  |
+|---|---|---|---|---|---|---|---|
+| (equal)KWT  |  0.032|0.015|0.017|0.016|0.013|0.013|0.012 |
+| (equal)Lower CI  |   0.021|0.010|0.011|0.011|0.009|0.009|0.008   |
+| (equal)Upper CI  |   0.043|0.020|0.022|0.021|0.017|0.017|0.016  |
+| (unequal)KWT  |  0.032|0.015|0.017|0.016|0.013|0.013|0.012 |
+| (unequal)Lower CI  |   0.020|0.010|0.011|0.010|0.009|0.008|0.008  |
+| (unequal)Upper CI  |   0.044|0.021|0.023|0.022|0.018|0.017|0.016  |
+```{r}
+vr_data = as.numeric(q2_data$data.type == "VR") + 1
+data_2f = list(N = N,
+            C = C,
+            R = R,
+            y = y,
+            x1 = x1,
+            x2 = x2,
+            x3 = x3,
+            country = country,
+            region = region,
+            VR = vr_data)
+
+fit_2f = stan(file = "./q2f_stan.stan", data = data_2f)
+```
+```{r}
+samples <- fit_2f %>% gather_draws(sigma_y[t])
+samples$t <- as.factor(samples$t)
+
+samples %>%
+  ggplot(aes(.value, fill = t, color = "posterior")) + geom_density(size = 1) + 
+  xlim(c(-1, 1)) + 
+  stat_function(fun = dhnorm, 
+        args = list(sigma = 1), 
+        aes(colour = 'prior'), size = 1) +
+  scale_color_manual(name = "", values = c("prior" = "red", "posterior" = "black")) + 
+  ggtitle("Prior and posterior for sigma region") + 
+  xlab("score")
+```
+
+```{r}
+#Extract the parameters from the model to get the point estimation
+parameters = rstan::extract(fit_2f)
+beta0 = parameters$beta_0
+beta1 = parameters$beta_1
+beta2 = parameters$beta_2
+beta3 = parameters$beta_3
+
+eta_ckmt = parameters$eta_country[,90]
+eta_rkmt = parameters$eta_region[,16]
+
+eta_cvnm = parameters$eta_country[,175]
+eta_rvnm = parameters$eta_region[,11]
+
+kwt2 = q2_validate[q2_validate$iso == "KWT",]
+kwt2$pred = 0; kwt2$sd = 0; kwt2$label = "non-equal variance"
+kwt$label = "equal variance"
+
+for(j in c(1:nrow(kwt2))){
+  pred = exp(beta0 + eta_ckmt + eta_rkmt + beta1 * log(kwt2$GDP[j]) + beta2*log(kwt2$GFR[j]) + beta3*kwt2$SAB[j])
+  kwt2$pred[j] = mean(pred)
+  kwt2$sd[j] = sd(pred)
+}
+
+q2f_data = rbind(kwt, kwt2)
+q2f_data$label <- as.factor(q2f_data$label)
+
+ggplot(data = q2f_data, aes(x=mid.date, y=pred, color = label)) + geom_line() + 
+  geom_ribbon(aes(ymin=pred - 2*sd,ymax=pred+2*sd),alpha=0.3) + 
+  xlab("Date in Year") + ylab("Prediction of PM_na")
+```
 
 \newpage
 
